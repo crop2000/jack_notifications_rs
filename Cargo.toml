@@ -1,0 +1,15 @@
+[package]
+name = "jack_notification_rs"
+description = "a rust library to listen to jack notifications"
+license = "GPL3"
+repository = "notyet"
+keywords = ["jack"]
+categories = ["library::audio"]
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+ctrlc = "3.1.5"
+jack = "0.13.0"
