@@ -16,10 +16,6 @@ rustPlatform.buildRustPackage rec {
 
   cargoLock.lockFile = ./Cargo.lock;
 
-  cargoLock.outputHashes = {
-         "jack-0.13.0" = "sha256-OiaB6sVY9Ot5PKd5gdeUNYZ57X42mv8YPcmEkKavkLM=";
-       };
-
   nativeBuildInputs = [
     pkg-config
     rustPlatform.bindgenHook

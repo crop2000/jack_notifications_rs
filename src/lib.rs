@@ -1,7 +1,44 @@
-use jack::Client;
-use std::fmt::Display;
-use std::sync::mpsc::{channel, Sender};
+//! jack notifications for rust.
+//!
+//! The jack crate exposes the callbacks to rust that make it possible to listen to jack notifications.
+//! This library implements a `enum` for the possible notifications.
+//! A simple jack client that is listens to those notifications and send them through a channel.
+//!
 
+#![warn(
+    clippy::all,
+    clippy::restriction,
+    clippy::pedantic,
+    clippy::nursery,
+    clippy::cargo
+)]
+#![allow(
+    // from clippy::restriction
+    clippy::blanket_clippy_restriction_lints,
+    renamed_and_removed_lints,
+    // single_call_fn,
+    clippy::question_mark_used,
+    clippy::implicit_return,
+    clippy::print_stdout,
+    clippy::std_instead_of_alloc,
+    clippy::exhaustive_enums,
+    clippy::exhaustive_structs,
+    clippy::pattern_type_mismatch,
+    clippy::use_debug,
+    clippy::min_ident_chars,
+    clippy::missing_trait_methods,
+    clippy::unwrap_used,
+    reason = "i think it is ok"
+)]
+
+use core::{convert::From, fmt::Display, marker::Send};
+use jack::Client;
+use std::{
+    fmt,
+    sync::mpsc::{channel, Receiver, Sender},
+};
+
+#[derive(Debug, PartialEq, Eq)]
 pub enum Notification {
     ThreadInit,
     Shutdown(jack::ClientStatus, String),
@@ -16,7 +53,8 @@ pub enum Notification {
 }
 
 impl Display for Notification {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::ThreadInit => writeln!(f, "JACK: thread init"),
             Self::Shutdown(status, reason) => {
@@ -69,54 +107,73 @@ impl Display for Notification {
     }
 }
 
-pub struct DummyProcessHandler {}
+pub struct DummyProcessHandler;
 
 impl jack::ProcessHandler for DummyProcessHandler {
+    #[inline]
     fn process(&mut self, _c: &jack::Client, _ps: &jack::ProcessScope) -> jack::Control {
         jack::Control::Continue
     }
 
+    #[inline]
     fn buffer_size(&mut self, _c: &jack::Client, _size: jack::Frames) -> jack::Control {
         jack::Control::Continue
     }
 }
 
-pub struct SimpleNotificationHandler {
-    pub sender: Sender<Notification>,
+pub struct SimpleNotificationHandler<T>
+where
+    T: From<Notification>,
+{
+    pub msg_sender: Sender<T>,
 }
 
-impl jack::NotificationHandler for SimpleNotificationHandler {
+impl<T> jack::NotificationHandler for SimpleNotificationHandler<T>
+where
+    T: From<Notification> + Send,
+{
+    #[inline]
     fn thread_init(&self, _: &jack::Client) {
-        let _ = self.sender.send(Notification::ThreadInit);
+        let _ignored_result = self.msg_sender.send(Notification::ThreadInit.into());
     }
 
+    #[inline]
     unsafe fn shutdown(&mut self, status: jack::ClientStatus, reason: &str) {
-        let _ = self
-            .sender
-            .send(Notification::Shutdown(status, reason.to_owned()));
+        let _ignored_result = self
+            .msg_sender
+            .send(Notification::Shutdown(status, reason.to_owned()).into());
     }
 
+    #[inline]
     fn freewheel(&mut self, _: &jack::Client, is_enabled: bool) {
-        let _ = self.sender.send(Notification::Freewheel(is_enabled));
+        let _ignored_result = self
+            .msg_sender
+            .send(Notification::Freewheel(is_enabled).into());
     }
 
+    #[inline]
     fn sample_rate(&mut self, _: &jack::Client, srate: jack::Frames) -> jack::Control {
-        let _ = self.sender.send(Notification::SampleRate(srate));
-        jack::Control::Continue
+        match self.msg_sender.send(Notification::SampleRate(srate).into()) {
+            Ok(()) => jack::Control::Continue,
+            Err(_) => jack::Control::Quit,
+        }
     }
 
+    #[inline]
     fn client_registration(&mut self, _: &jack::Client, name: &str, is_reg: bool) {
-        let _ = self
-            .sender
-            .send(Notification::ClientRegistration(name.to_owned(), is_reg));
+        let _ignored_result = self
+            .msg_sender
+            .send(Notification::ClientRegistration(name.to_owned(), is_reg).into());
     }
 
+    #[inline]
     fn port_registration(&mut self, _: &jack::Client, port_id: jack::PortId, is_reg: bool) {
-        let _ = self
-            .sender
-            .send(Notification::PortRegistration(port_id, is_reg));
+        let _ignored_result = self
+            .msg_sender
+            .send(Notification::PortRegistration(port_id, is_reg).into());
     }
 
+    #[inline]
     fn port_rename(
         &mut self,
         _: &jack::Client,
@@ -124,14 +181,15 @@ impl jack::NotificationHandler for SimpleNotificationHandler {
         old_name: &str,
         new_name: &str,
     ) -> jack::Control {
-        let _ = self.sender.send(Notification::PortRename(
-            port_id,
-            old_name.to_owned(),
-            new_name.to_owned(),
-        ));
-        jack::Control::Continue
+        match self.msg_sender.send(
+            Notification::PortRename(port_id, old_name.to_owned(), new_name.to_owned()).into(),
+        ) {
+            Ok(()) => jack::Control::Continue,
+            Err(_) => jack::Control::Quit,
+        }
     }
 
+    #[inline]
     fn ports_connected(
         &mut self,
         _: &jack::Client,
@@ -139,39 +197,56 @@ impl jack::NotificationHandler for SimpleNotificationHandler {
         port_id_b: jack::PortId,
         are_connected: bool,
     ) {
-        let _ = self.sender.send(Notification::PortsConnected(
-            port_id_a,
-            port_id_b,
-            are_connected,
-        ));
+        let _ignored_result = self
+            .msg_sender
+            .send(Notification::PortsConnected(port_id_a, port_id_b, are_connected).into());
     }
 
+    #[inline]
     fn graph_reorder(&mut self, _: &jack::Client) -> jack::Control {
-        let _ = self.sender.send(Notification::GraphReorder);
-
-        jack::Control::Continue
+        match self.msg_sender.send(Notification::GraphReorder.into()) {
+            Ok(()) => jack::Control::Continue,
+            Err(_) => jack::Control::Quit,
+        }
     }
 
+    #[inline]
     fn xrun(&mut self, _: &jack::Client) -> jack::Control {
-        let _ = self.sender.send(Notification::XRun);
-        jack::Control::Continue
+        match self.msg_sender.send(Notification::XRun.into()) {
+            Ok(()) => jack::Control::Continue,
+            Err(_) => jack::Control::Quit,
+        }
     }
 }
 
-pub fn jack_notification_handle(
-    name: &str,
-) -> Result<
+/// Return type of the `jack_notification_handle` function
+type JackHandleResult<T> = Result<
     (
-        jack::AsyncClient<SimpleNotificationHandler, DummyProcessHandler>,
-        std::sync::mpsc::Receiver<Notification>,
+        jack::AsyncClient<SimpleNotificationHandler<T>, DummyProcessHandler>,
+        Receiver<T>,
     ),
     jack::Error,
-> {
-    let (client, _status) = Client::new(name, jack::ClientOptions::NO_START_SERVER)?;
-    let (sender, receiver) = channel();
+>;
 
-    let active_client = client
-        .activate_async(SimpleNotificationHandler { sender }, DummyProcessHandler {})
-        .unwrap();
+/// `jack_notification_handle` creates a Jack Client that we need to listen to notifications.
+///
+/// it returns the active client and the receiver side of the channel for Notifications.
+/// one need to hold the active client until one drops it to close the client.
+///
+/// # Errors
+///
+/// This function will return an error  if the async client cannot be created.
+#[inline]
+pub fn jack_notification_handle<T>(name: &str) -> JackHandleResult<T>
+where
+    T: From<Notification> + Send + 'static,
+{
+    let (client, _status) = Client::new(name, jack::ClientOptions::NO_START_SERVER)?;
+    let (sender, receiver) = channel::<T>();
+
+    let active_client = client.activate_async(
+        SimpleNotificationHandler { msg_sender: sender },
+        DummyProcessHandler {},
+    )?;
     Ok((active_client, receiver))
 }

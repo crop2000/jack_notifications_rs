@@ -1,5 +1,5 @@
 [package]
-name = "jack_notification_rs"
+name = "jack-notifications-rs"
 description = "a rust library to listen to jack notifications"
 license = "GPL3"
 repository = "notyet"

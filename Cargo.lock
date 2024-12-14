@@ -50,6 +50,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "jack-notifications-rs"
+version = "0.1.0"
+dependencies = [
+ "ctrlc",
+ "jack",
+]
+
+[[package]]
 name = "jack-sys"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -61,14 +69,6 @@ dependencies = [
  "libloading",
  "log",
  "pkg-config",
-]
-
-[[package]]
-name = "jack_notification_rs"
-version = "0.1.0"
-dependencies = [
- "ctrlc",
- "jack",
 ]
 
 [[package]]
